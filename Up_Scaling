@@ -1,0 +1,106 @@
+//Group no : 6
+//Contact email : aditya92@ufl.edu
+
+//Data precision(input and output) : 8 - bt unsigned array with binary values
+//Data size range : from 2x2 matrix to 2^15x2^15
+
+//Description of code : Implementing Image processing Up_Scaling Resize kernel using Nvidia NPP library. 
+//m x m image is resized to n x n image where n=m*2. 
+//The kernel is then executed for 1000 times. And the kernel execution time is averaged over the 1000 values.
+
+#include <memory>
+#include <math.h>
+#include <time.h>
+#include <iostream>
+#include <stdio.h> 
+#include <stdlib.h> 
+#include <fstream> 
+#include <npp.h>
+#include <nppi.h>
+#include <npps.h>
+#include <cuda_runtime.h>
+#include <cuda_gl_interop.h>
+#include <helper_functions.h> // includes for SDK helper functions
+#include <helper_cuda.h>      // includes for cuda initialization and error checking
+
+using namespace std;
+
+int main()
+{
+
+	Npp8u * h_i;
+	Npp8u * h_o;
+	Npp8u * d_i;
+	Npp8u * d_o;	   
+
+	cudaEvent_t start,stop;
+	long double elapsedTime;
+
+	//CREATING EVENTS
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+	
+	long double sum[15];
+	int count = 0;
+	int n;
+	for(int m = 2; m < 32769; m=m*2)
+	{
+		sum[count] = 0;	
+		n = m * 2;		
+
+		h_i = (Npp8u*)malloc(m * m * sizeof(Npp8u));		// allocate memory
+		h_o = (Npp8u*)malloc(n * n * sizeof(Npp8u));
+		cudaMalloc((Npp8u*) &d_i, m * m * sizeof(Npp8u));
+		cudaMalloc((Npp8u*) &d_o, n * n * sizeof(Npp8u));
+	
+		int x;
+		for (int i = 0; i < m * m; i++)
+		{
+			h_i[i] = 100;              //Input Gray scale image 
+			if (i % m < (m/2))
+				h_i[i] = 200;
+		}
+		cudaMemcpy(d_i, h_i, sizeof(Npp8u) * m * m, cudaMemcpyHostToDevice);		//copy input to device
+	
+		NppStatus resize_up_status;
+
+		
+		NppiSize oSrcSize = {m, m};		//initialize parameters for ResizeSqrPixel
+		NppiPoint oSrcOffset = {0, 0};
+		NppiRect oSizeROI = {m, m};
+		NppiRect *h_i_Rect;
+`		NppiRect oDstROI = {n, n};
+		
+		resize_up_status = nppiGetResizeRect (oSrcROI, h_i_Rect, 2, 2, 1, 1, NPPI_INTER_LINEAR);   
+
+		for (int i = 0; i < 1000; i++)
+		{
+			cudaEventRecord(start,0);		// Start timer
+			resize_up_status =   nppiResizeSqrPixel_8u_C1R(d_i, oSrcSize, m, oSrcROI, d_o, n, oDstROI, 2, 2, 1, 1, NPPI_INTER_LINEAR) 
+			cudaEventRecord(stop,0);		Stop Timer
+			cudaEventSynchronize(stop);
+
+			cudaEventElapsedTime(&elapsedTime,start,stop); // Evaluate elapsed time
+			sum[count] = sum[count] + elapsedTime;		// Sum updated on each run
+		}
+		sum[count] = ((sum[count] / 1000);	// Final average computed and saved to an array location
+		
+		cudaMemcpy(h_o, d_o, sizeof(Nppu8) * n * n, cudaMemcpyDeviceToHost);	//Copy output to host
+
+		count++;
+
+		cudaFree(d_o);		// Free memory
+		cudaFree(d_i);
+		Free(h_i);
+		Free(h_o);
+	}
+
+	ofstream file;
+	file.open("resize_up_result_npp.txt");
+	for (int i = 0; i < 15; i++)
+	{
+		file << "Average time taken for 2^" << i << " = " << sum[i] << endl;
+	}
+	file.close();
+	return 0;
+}
